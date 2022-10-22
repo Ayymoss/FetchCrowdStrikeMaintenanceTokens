@@ -7,10 +7,15 @@ namespace CrowdStrikeApiFetch;
 
 public static class CrowdStrikeApiFetch
 {
+    private const string InputFile = "raw.txt";
+    private const string OutputFile = "MachineTokens.json";
+    private const string OAuthClientId = "YOUR_CLIENT_ID";
+    private const string OAuthClientSecret = "YOUR_CLIENT_SECRET";
+
     public static async Task Main()
     {
-        if (!File.Exists("raw.txt")) throw new FileNotFoundException("raw.txt not found.");
-        var file = await File.ReadAllLinesAsync("raw.txt");
+        if (!File.Exists(InputFile)) throw new FileNotFoundException($"{InputFile} not found.");
+        var file = await File.ReadAllLinesAsync(InputFile);
         var index = 0;
         Token? token = null;
         var uninstallTokens = new List<UninstallTokens>();
@@ -49,7 +54,7 @@ public static class CrowdStrikeApiFetch
             {
                 throw new Exception($"[{DateTime.UtcNow}] Unexpected token response. Machine ID valid?");
             }
-            
+
             Console.WriteLine($"[{DateTime.UtcNow}] {index + 1}/{file.Length}: {machineId} - {uninstallToken}");
             uninstallTokens.Add(new UninstallTokens {DeviceId = machineId, MaintenanceToken = uninstallToken});
             index++;
@@ -58,13 +63,12 @@ public static class CrowdStrikeApiFetch
 
         Console.WriteLine($"[{DateTime.UtcNow}] Writing to file...");
 
-        const string fileName = "MachineTokens.json";
-        await using var createStream = File.Create(fileName);
+        await using var createStream = File.Create(OutputFile);
         await JsonSerializer.SerializeAsync(createStream, uninstallTokens,
             new JsonSerializerOptions {WriteIndented = true});
         await createStream.DisposeAsync();
 
-        Console.WriteLine($"[{DateTime.UtcNow}] Written to {fileName}");
+        Console.WriteLine($"[{DateTime.UtcNow}] Written to {OutputFile}");
     }
 
     private static async Task<Token?> GetToken()
@@ -74,8 +78,8 @@ public static class CrowdStrikeApiFetch
         var oAuthToken = await httpOAuth.PostAsync("https://api.crowdstrike.com/oauth2/token",
             new FormUrlEncodedContent(new Dictionary<string, string>
             {
-                {"client_id", "<API_ID>"},
-                {"client_secret", "<API_SECRET>"}
+                {"client_id", OAuthClientId},
+                {"client_secret", OAuthClientSecret}
             }));
 
         var token = JsonSerializer.Deserialize<Token>(await oAuthToken.Content.ReadAsStringAsync());
