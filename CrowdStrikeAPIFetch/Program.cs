@@ -29,7 +29,7 @@ public static class CrowdStrikeApiFetch
         {
             if (authToken?.AccessToken is null || authToken.Expiration - DateTime.UtcNow < TimeSpan.FromSeconds(100))
             {
-                authToken = await GetToken();
+                authToken = await GetAuthToken();
                 httpClient.DefaultRequestHeaders.Clear();
                 httpClient.DefaultRequestHeaders.Add("authorization", $"Bearer {authToken?.AccessToken}");
             }
@@ -72,7 +72,7 @@ public static class CrowdStrikeApiFetch
         Console.WriteLine($"[{DateTime.UtcNow}] Written to {OutputFile}");
     }
 
-    private static async Task<AuthToken?> GetToken()
+    private static async Task<AuthToken> GetAuthToken()
     {
         using var httpClient = new HttpClient();
 
