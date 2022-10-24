@@ -7,7 +7,7 @@ namespace CrowdStrikeApiFetch;
 
 public static class CrowdStrikeApiFetch
 {
-    private const string InputFile = "raw.txt";
+    private const string InputFile = "raw.json";
     private const string OutputFile = "MachineTokens.json";
     private const string OAuthClientId = "YOUR_CLIENT_ID";
     private const string OAuthClientSecret = "YOUR_CLIENT_SECRET";
@@ -15,14 +15,17 @@ public static class CrowdStrikeApiFetch
     public static async Task Main()
     {
         if (!File.Exists(InputFile)) throw new FileNotFoundException($"{InputFile} not found.");
-        var file = await File.ReadAllLinesAsync(InputFile);
+        
+        var file = await File.ReadAllTextAsync(InputFile);
+        var uninstallTokens = JsonSerializer.Deserialize<List<UninstallToken>>(file);
+        if (uninstallTokens is null) throw new NullReferenceException("There are no valid machines.");
+
         var index = 0;
         AuthToken? authToken = null;
-        var uninstallTokens = new List<UninstallToken>();
         using var httpClient = new HttpClient();
 
         Console.WriteLine($"[{DateTime.UtcNow}] Starting. Please wait for all machines to be processed. It will write to file after.");
-        foreach (var machineId in file)
+        foreach (var token in uninstallTokens)
         {
             if (authToken?.AccessToken is null || authToken.Expiration - DateTime.UtcNow < TimeSpan.FromSeconds(100))
             {
@@ -31,18 +34,17 @@ public static class CrowdStrikeApiFetch
                 httpClient.DefaultRequestHeaders.Add("authorization", $"Bearer {authToken?.AccessToken}");
             }
 
-            string? uninstallToken;
             var response = await httpClient
                 .PostAsJsonAsync("https://api.crowdstrike.com/policy/combined/reveal-uninstall-token/v1",
                     new
                     {
                         audit_message = "AUTOMATED_UNINSTALL_TOKEN_FETCH",
-                        device_id = machineId
+                        device_id = token.MachineId
                     });
 
             try
             {
-                uninstallToken = JsonDocument.Parse(await response.Content.ReadAsStringAsync())
+                token.MaintenanceToken = JsonDocument.Parse(await response.Content.ReadAsStringAsync())
                     .RootElement
                     .GetProperty("resources")
                     .EnumerateArray()
@@ -55,8 +57,7 @@ public static class CrowdStrikeApiFetch
                 throw new Exception($"[{DateTime.UtcNow}] Unexpected token response. Machine ID valid?");
             }
 
-            Console.WriteLine($"[{DateTime.UtcNow}] {index + 1}/{file.Length}: {machineId} - {uninstallToken}");
-            uninstallTokens.Add(new UninstallToken {DeviceId = machineId, MaintenanceToken = uninstallToken});
+            Console.WriteLine($"[{DateTime.UtcNow}] {index + 1}/{uninstallTokens.Count}: {token.Hostname} - {token.MachineId} - {token.MaintenanceToken}");
             index++;
             await Task.Delay(1_000);
         }
@@ -92,8 +93,9 @@ public static class CrowdStrikeApiFetch
 
 public class UninstallToken
 {
-    public string? DeviceId { get; set; }
+    public string? MachineId { get; set; }
     public string? MaintenanceToken { get; set; }
+    public string? Hostname { get; set; }
 }
 
 public class AuthToken
