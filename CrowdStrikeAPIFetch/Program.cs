@@ -17,22 +17,22 @@ public static class CrowdStrikeApiFetch
         if (!File.Exists(InputFile)) throw new FileNotFoundException($"{InputFile} not found.");
         var file = await File.ReadAllLinesAsync(InputFile);
         var index = 0;
-        Token? token = null;
-        var uninstallTokens = new List<UninstallTokens>();
-        using var httpPost = new HttpClient();
+        AuthToken? authToken = null;
+        var uninstallTokens = new List<UninstallToken>();
+        using var httpClient = new HttpClient();
 
         Console.WriteLine($"[{DateTime.UtcNow}] Starting. Please wait for all machines to be processed. It will write to file after.");
         foreach (var machineId in file)
         {
-            if (token?.AccessToken is null || token.ExpiresAt - DateTime.UtcNow < TimeSpan.FromSeconds(100))
+            if (authToken?.AccessToken is null || authToken.Expiration - DateTime.UtcNow < TimeSpan.FromSeconds(100))
             {
-                token = await GetToken();
-                httpPost.DefaultRequestHeaders.Clear();
-                httpPost.DefaultRequestHeaders.Add("authorization", $"Bearer {token?.AccessToken}");
+                authToken = await GetToken();
+                httpClient.DefaultRequestHeaders.Clear();
+                httpClient.DefaultRequestHeaders.Add("authorization", $"Bearer {authToken?.AccessToken}");
             }
 
             string? uninstallToken;
-            var response = await httpPost
+            var response = await httpClient
                 .PostAsJsonAsync("https://api.crowdstrike.com/policy/combined/reveal-uninstall-token/v1",
                     new
                     {
@@ -56,7 +56,7 @@ public static class CrowdStrikeApiFetch
             }
 
             Console.WriteLine($"[{DateTime.UtcNow}] {index + 1}/{file.Length}: {machineId} - {uninstallToken}");
-            uninstallTokens.Add(new UninstallTokens {DeviceId = machineId, MaintenanceToken = uninstallToken});
+            uninstallTokens.Add(new UninstallToken {DeviceId = machineId, MaintenanceToken = uninstallToken});
             index++;
             await Task.Delay(1_000);
         }
@@ -71,34 +71,34 @@ public static class CrowdStrikeApiFetch
         Console.WriteLine($"[{DateTime.UtcNow}] Written to {OutputFile}");
     }
 
-    private static async Task<Token?> GetToken()
+    private static async Task<AuthToken?> GetToken()
     {
-        using var httpOAuth = new HttpClient();
+        using var httpClient = new HttpClient();
 
-        var oAuthToken = await httpOAuth.PostAsync("https://api.crowdstrike.com/oauth2/token",
+        var response = await httpClient.PostAsync("https://api.crowdstrike.com/oauth2/token",
             new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 {"client_id", OAuthClientId},
                 {"client_secret", OAuthClientSecret}
             }));
 
-        var token = JsonSerializer.Deserialize<Token>(await oAuthToken.Content.ReadAsStringAsync());
-        if (token?.AccessToken is null) throw new Exception("OAuth token response is invalid. Valid id/secret?");
+        var authToken = JsonSerializer.Deserialize<AuthToken>(await response.Content.ReadAsStringAsync());
+        if (authToken?.AccessToken is null) throw new Exception("OAuth token response is invalid. Valid id/secret?");
 
-        token.ExpiresAt = DateTime.UtcNow + TimeSpan.FromSeconds(token.ExpiresIn);
-        return token;
+        authToken.Expiration = DateTime.UtcNow + TimeSpan.FromSeconds(authToken.ExpiresIn);
+        return authToken;
     }
 }
 
-public class UninstallTokens
+public class UninstallToken
 {
     public string? DeviceId { get; set; }
     public string? MaintenanceToken { get; set; }
 }
 
-public class Token
+public class AuthToken
 {
     [JsonPropertyName("access_token")] public string? AccessToken { get; set; }
     [JsonPropertyName("expires_in")] public int ExpiresIn { get; set; }
-    public DateTime ExpiresAt { get; set; }
+    public DateTime Expiration { get; set; }
 }
